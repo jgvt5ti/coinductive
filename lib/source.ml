@@ -6,10 +6,12 @@ type 'tyvar base
   | TyProd of 'tyvar base * 'tyvar base
   | TySum of 'tyvar base * 'tyvar base
   | TyNu of 'tyvar * 'tyvar base
+  [@@deriving eq,ord,show]
 
 type 'tyvar ty 
   = TyBase of 'tyvar base
   | TyFun of 'tyvar ty * 'tyvar ty
+  [@@deriving eq,ord,show]
 
 type 'tyvar expr
   = Var of 'tyvar ty Id.t
@@ -21,3 +23,4 @@ type 'tyvar expr
   | InExpr of int * 'tyvar expr
   | MatchExpr of 'tyvar ty Id.t * 'tyvar expr * 'tyvar expr * 'tyvar expr
   | FixExpr of 'tyvar ty Id.t * 'tyvar expr
+  [@@deriving eq,ord,show]
