@@ -3,7 +3,6 @@ type 'ty t =
   ; id   : int
   ; ty   : 'ty
   }
-  [@@deriving eq,ord,show,iter,map]
 
 class counter = object
   val mutable cnt = 0
@@ -21,5 +20,3 @@ let gen : ?name:string -> 'annot -> 'anno t =
      ; id = gen_id()
      ; ty = ann
      }
-
-let id_to_string v = ("X" ^ (string_of_int v.id))

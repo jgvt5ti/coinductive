@@ -4,12 +4,10 @@ type ty
   = TyInt
   | TyList
   | TyFun of ty * ty
-  [@@deriving eq,ord,show]
 
 type pat
   = NilPat
   | ConsPat of int * ty Id.t
-  [@@deriving eq,ord,show]
 
 type expr
   = Var of ty Id.t
@@ -21,7 +19,6 @@ type expr
   | If0Expr of expr * expr * expr
   | MatchList of expr * (pat * expr) list
   | FixExpr of ty Id.t * expr
-  [@@deriving eq,ord,show]
 
 let rec sbstArith v a a' = match a' with
   | AVar v1 when v == v1 -> a

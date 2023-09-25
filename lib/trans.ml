@@ -54,9 +54,3 @@ let rec trans source = match source with
     let t0 = T.sbst var lambda (trans s0) in
     let t1 = T.sbst var lambda (trans s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)
-
-let rec toHFL t = match t with
-  | T.Var v -> Hfl.Var (id_to_string v)
-  | T.Abs (v, t) -> Hfl.Abs (id_to_string v, toHFL t)
-  | T.App (t1, t2) -> Hfl.App (toHFL t1, toHFL t2)
-  | _ -> Bool false
