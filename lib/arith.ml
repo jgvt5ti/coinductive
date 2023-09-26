@@ -32,4 +32,4 @@ type 'a arith
   = AVar of 'a Id.t
   | Num of int
   | Op of op * 'a arith * 'a arith
-  [@@deriving eq,ord,show,iter,map,fold,sexp]
+  [@@deriving eq,ord,show]

@@ -22,4 +22,4 @@ let gen : ?name:string -> 'annot -> 'anno t =
      ; ty = ann
      }
 
-let string_of_id id = "X" ^ (string_of_int id.id)
+let string_of_id id = id.name ^ "_" ^ (string_of_int id.id)
