@@ -117,10 +117,10 @@ let rec toRules (env: SS.t) t = match t with
   | T.FixExpr (v, t) -> 
     let env = SS.add v.name env in
     let (f, h) = toRules env t in
-    let hes: Hfl.hes_rule = { var = v.name; args = SS.elements env; fix = Hfl.Mu; body = f} in
+    let hes: Hfl.hes_rule = { var = String.uppercase_ascii v.name; args = SS.elements env; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 
 let toHES t =
   let (top, rules) = toRules SS.empty t in
-  let start: Hfl.hes_rule = { var = "S"; args = []; fix = Hfl.Nu; body = top} in
+  let start: Hfl.hes_rule = { var = "Sentry"; args = []; fix = Hfl.Nu; body = top} in
   start :: rules

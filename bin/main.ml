@@ -7,6 +7,6 @@ let repl () =
   let tgt = Trans.trans src in
   print_endline @@ Target.show_expr tgt;
   let hes = Trans.toHES tgt in
-  print_endline @@ Hfl.show_hes hes
+  print_endline @@ Hfl.print_hes hes
 
 let _ = repl()
