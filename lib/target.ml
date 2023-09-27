@@ -13,7 +13,9 @@ type pat
 
 type expr
   = Var of ty Id.t
-  | Arith of ty arith
+  | Unit
+  | Num of int
+  | Op of op * expr * expr
   | Nil
   | Cons of expr * expr
   | Abs of ty Id.t * expr
@@ -32,10 +34,9 @@ let rec sbstArith v a a' = match a' with
 let rec sbst v t t' = match t' with
   | Var v1 when v == v1 -> t
   | Var v1 -> Var v1
-  | Arith a' -> begin match t with
-    | Arith a -> Arith (sbstArith v a a')
-    | _ -> Arith a'
-    end
+  | Unit -> Unit
+  | Num n -> Num n
+  | Op(op, t1, t2) -> Op(op, sbst v t t1, sbst v t t2)
   | Nil -> Nil
   | Cons (t1, t2) -> Cons (sbst v t t1, sbst v t t2)
   | Abs (arg, t1) -> Abs (arg, sbst v t t1)

@@ -16,9 +16,11 @@ let counter = new counter
 let gen_id () = counter#tick
 
 let gen : ?name:string -> 'annot -> 'anno t =
-  fun ?(name="x") ann ->
+  fun ?(name="_") ann ->
+    let n = gen_id () in
+    let name = if name = "_" then name ^ (string_of_int n) else name in
      { name = name
-     ; id = gen_id()
+     ; id = n
      ; ty = ann
      }
 

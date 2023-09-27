@@ -14,3 +14,27 @@ type hfl_listz =
   | Exists of string * hfl_listz
   | Not of hfl_listz
   [@@deriving eq,ord,show]
+
+type fix = Nu | Mu
+  [@@deriving eq,ord,show]
+
+type hes_rule =
+  { var  : string
+  ; args : string list
+  ; fix  : fix
+  ; body : hfl_listz
+  }
+  [@@deriving eq,ord,show]
+
+type hes = hes_rule list
+  [@@deriving eq,ord,show]
+
+let rec and_fold ls = match ls with
+  | [f] -> f
+  | f::ls' -> And (f, and_fold ls')
+  | _ -> assert false
+
+let rec or_fold ls = match ls with
+  | [f] -> f
+  | f::ls' -> Or (f, or_fold ls')
+  | _ -> assert false
