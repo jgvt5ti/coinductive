@@ -1,7 +1,10 @@
 open Arith
+open Id
 
 type ty 
-  = TyInt
+  = TyVar of ty option
+  | TyUnit
+  | TyInt
   | TyList
   | TyFun of ty * ty
   [@@deriving eq,ord,show]
@@ -25,14 +28,37 @@ type expr
   | FixExpr of ty Id.t * expr
   [@@deriving eq,ord,show]
 
-let rec sbstArith v a a' = match a' with
-  | AVar v1 when v == v1 -> a
-  | AVar v1 -> AVar v1
-  | Num n -> Num n
-  | Op(op, a1, a2) -> Op(op, sbstArith v a a1, sbstArith v a a2)
+
+let print_pat pat = match pat with
+  | NilPat -> "[] -> "
+  | ConsPat (n, x) -> string_of_int n ^ "::" ^ x.name ^ " -> "
+let rec print_tgt t = match t with
+  | Var v -> v.name
+  | Unit -> "*"
+  | Num n -> string_of_int n
+  | Op(op, t1, t2) ->
+    "(" ^ print_tgt t1 ^ print_op op ^ print_tgt t2 ^ ")"
+  | Nil -> "[]"
+  | Cons(t1, t2) ->
+    "(" ^ print_tgt t1 ^ "::" ^ print_tgt t2 ^ ")"
+  | Abs(v, t) ->
+    "(\\" ^ v.name ^ ". " ^ print_tgt t ^ ")"
+  | App(t1, t2) ->
+    "(" ^ print_tgt t1 ^ " " ^ print_tgt t2 ^ ")"
+  | If0Expr(t0, t1, t2) ->
+    "(if " ^ print_tgt t0 ^ " then " ^ print_tgt t1 ^ " else " ^ print_tgt t2 ^ ")"
+  | MatchList(t, pat) ->
+    let pats_str = List.map (fun (pat, t) -> print_pat pat ^ print_tgt t) pat in
+    let rec f strs = match strs with
+    | [] -> ""
+    | [s] -> s
+    | s::ls -> s ^ " | " ^ f ls in
+    "(match " ^ print_tgt t ^ " with (" ^ f pats_str ^ "))"
+  | FixExpr(v, t) ->
+    "(fix " ^ v.name ^ ". " ^ print_tgt t ^ ")"
 
 let rec sbst v t t' = match t' with
-  | Var v1 when v == v1 -> t
+  | Var v1 when v.id = v1.id -> t
   | Var v1 -> Var v1
   | Unit -> Unit
   | Num n -> Num n
@@ -46,3 +72,106 @@ let rec sbst v t t' = match t' with
     let pats = List.map (fun (pat, t1) -> (pat, sbst v t t1)) ls in
     MatchList (sbst v t t0, pats)
   | FixExpr (var, t1) -> FixExpr(var, sbst v t t1)
+
+let can_reduce t = match t with
+  | App(Abs(_, _), _) | If0Expr(Num _, _, _) 
+  | MatchList(Nil, _) | MatchList(Cons(Num _, _), _) -> true
+  | _ -> false
+
+let beta_ t = match t with
+  | App(Abs(v, t1), t2) -> sbst v t2 t1
+  | If0Expr(Num 0, t1, _) -> t1
+  | If0Expr(Num _, _, t2) -> t2
+  | MatchList(Nil, ls) -> 
+    let (_, t) = List.find (fun (pat, _) -> pat = NilPat) ls in
+    t
+  | MatchList(Cons(Num n, t), ls) ->
+    let (pat, ti) = List.find (fun (pat, _) -> match pat with
+    | ConsPat (m, _) when n = m -> true | _ -> false) ls in
+    (match pat with | ConsPat (_, v) -> sbst v t ti | _ -> assert false)
+  | _ -> t
+
+let rec beta t = match t with
+  | t when can_reduce t -> beta (beta_ t)
+  | App(t1, t2) when can_reduce t1 -> beta @@ App(beta_ t1, t2)
+  | If0Expr(t0, t1, t2) when can_reduce t0 -> beta @@ If0Expr(beta_ t0, t1, t2)
+  | MatchList(t0, ls) when can_reduce t0 -> beta @@ MatchList(beta_ t0, ls)
+  | If0Expr(t0, t1, t2) -> If0Expr(t0, beta t1, beta t2)
+  | MatchList(t0, ls) ->
+    let ls' = List.map (fun (pat, ti) -> (pat, beta ti)) ls in
+    MatchList(t0, ls')
+  | FixExpr(v, t0) -> FixExpr(v, beta t0)
+  | Abs(v, t0) -> Abs(v, beta t0)
+  | App(t1, t2) -> App(t1, beta t2)
+  | _ -> t
+
+let rec cps_trans_ty ty = match ty with
+  | TyUnit -> TyUnit
+  | TyInt | TyList -> TyFun(TyFun(ty, TyUnit), TyUnit)
+  | TyFun(ty1, ty2) -> 
+    let t = TyFun(cps_trans_ty ty1, cps_trans_ty ty2) in
+    TyFun(TyFun(t, TyUnit), TyUnit)
+  | TyVar _ -> assert false
+
+let rec cps_trans t = match t with
+  | Var v ->
+    let kty = cps_trans_ty v.ty in
+    let kvar = gen kty in
+    let k = Var kvar in
+    Abs(kvar, App(t, k))
+  | Num _ ->
+    let kty = cps_trans_ty TyInt in
+    let kvar = gen kty in
+    let k = Var kvar in
+    Abs(kvar, App(k, t))
+  | Nil ->
+    let kty = cps_trans_ty TyList in
+    let kvar = gen kty in
+    let k = Var kvar in
+    Abs(kvar, App(k, t))
+  | Abs (v, t) ->
+    let kty = cps_trans_ty TyUnit in
+    let kvar = gen kty in
+    let k = Var kvar in
+    Abs (kvar, App(k, Abs(v, cps_trans t)))
+  | App (t1, t2) ->
+    let kty = cps_trans_ty TyUnit in
+    let kvar = gen kty in
+    let k = Var kvar in
+    let mty = cps_trans_ty TyUnit in
+    let mvar = gen mty in
+    let m = Var mvar in
+    Abs(kvar, App(cps_trans t1, Abs(mvar, App(App(m, cps_trans t2), k))))
+  | If0Expr (t, t1, t2) ->
+    let kty = cps_trans_ty TyUnit in
+    let kvar = gen kty in
+    let k = Var kvar in
+    let mty = cps_trans_ty TyUnit in
+    let mvar = gen mty in
+    let m = Var mvar in
+    let body = Abs(mvar, If0Expr (m, App(cps_trans t1, k), App(cps_trans t2, k))) in
+    Abs(kvar, App(cps_trans t, body))
+  | MatchList(t, ls) ->
+    let kty = cps_trans_ty TyUnit in
+    let kvar = gen kty in
+    let k = Var kvar in
+    let mty = cps_trans_ty TyUnit in
+    let mvar = gen mty in
+    let m = Var mvar in
+    let f = fun (pat, ti) ->
+      (pat, App(cps_trans ti, k)) in
+    let body = Abs(mvar, MatchList(m, List.map f ls)) in
+    Abs(kvar, App(cps_trans t, body))
+  | FixExpr (v, t) ->
+    FixExpr (v, cps_trans t)
+  | _ -> t
+
+(* t: list -> int*)
+let cps_trans_top lvar t =
+  let top = cps_trans t in (* top: (((list -> . -> .) -> (int -> .) -> .) -> .) -> . *)
+  let cvar = gen (TyFun(TyList, TyUnit)) in
+  let cps_ls = Abs(cvar, App (Var cvar, Var lvar)) in
+  let kvar = gen TyInt in
+  let cont = Abs(kvar, Unit) in
+  let kvar2 = gen TyInt in
+  App(top, Abs(kvar2, App(App(Var kvar2, cps_ls), cont)))

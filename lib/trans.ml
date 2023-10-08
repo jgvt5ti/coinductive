@@ -19,7 +19,6 @@ let rec transArith = function
 
 let rec range m n = if m > n then [] else m :: range (m+1) n
 
-
 let rec trans source = match source with
   | S.Var v -> T.Var (transId v)
   | S.Num n ->
@@ -41,7 +40,8 @@ let rec trans source = match source with
     let nums = range 0 (size - 1) in
     let args = List.combine ls nums in
     let f = fun (s, n) ->
-      (T.ConsPat(n, gen T.TyList), T.App (trans s, arg))
+      let var = gen T.TyList in
+      (T.ConsPat(n, var), T.App (trans s, Var var))
       in
     T.Abs(argvar, T.MatchList (arg, List.map f args))
   | S.Proj (i, s) ->
@@ -67,11 +67,7 @@ let rec trans source = match source with
     let t0 = T.sbst var lambda (trans s0) in
     let t1 = T.sbst var lambda (trans s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)
-(*
-let rec toCPS t k = match t with
-  | T.Num n -> T.App(k, T.Num n)
-  | _ -> assert false
-*)
+
 let rec toRules (env: SS.t) t = match t with
   | T.Var v -> (Hfl.Var v.name, [])
   | T.Unit -> (Hfl.Bool true, [])
@@ -110,17 +106,21 @@ let rec toRules (env: SS.t) t = match t with
       let condTail = Hfl.Pred(Neql, [], [Hfl.Opl(Tail, [], [f]); Hfl.Var v.name]) in
       let env = SS.add v.name env in
       let (fi, hi) = toRules env ti in
-      (Hfl.and_fold [condHead; condTail; fi], hi)
+      (Hfl.or_fold [condHead; condTail; fi], hi)
     in
     let (fml, hes) = List.split @@ List.map sub pats in
     (Hfl.and_fold fml, h @ List.concat hes)
   | T.FixExpr (v, t) -> 
-    let env = SS.add v.name env in
-    let (f, h) = toRules env t in
-    let hes: Hfl.hes_rule = { var = String.uppercase_ascii v.name; args = SS.elements env; fix = Hfl.Mu; body = f} in
+    let lvar = Id.gen T.TyList in
+    let cvar = Id.gen @@ T.TyFun(T.TyInt, T.TyUnit) in
+    let ss = SS.of_list [v.name; lvar.name; cvar.name] in
+    let newenv = SS.union ss env in
+    let (f, h) = toRules newenv t in
+    let hes: Hfl.hes_rule = { var = v.name; args = [cvar.name; lvar.name] @ SS.elements env; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 
-let toHES t =
+let toHES lvar t =
   let (top, rules) = toRules SS.empty t in
+  let top = Hfl.Forall(lvar.name, top) in
   let start: Hfl.hes_rule = { var = "Sentry"; args = []; fix = Hfl.Nu; body = top} in
   start :: rules

@@ -52,13 +52,13 @@ let rec print_hfl f = match f with
     "(" ^ print_hfl f1 ^ Arith.print_op op ^ print_hfl f2 ^ ")"
   | Opl(Nil, [], []) -> "[]"
   | Opl(Cons, [f1], [f2]) -> "(" ^ print_hfl f1 ^ " :: " ^ print_hfl f2 ^ ")"
-  | Opl(Tail, [], [f]) -> "tail " ^ print_hfl f ^ ")"
+  | Opl(Tail, [], [f]) -> "(tail " ^ print_hfl f ^ ")"
   | Pred (pred, [f1; f2], []) | Pred (pred, [], [f1; f2]) -> 
     "(" ^ print_hfl f1  ^ " " ^ Arith.print_pred pred ^ " " ^ print_hfl f2 ^ ")"
   | Size (size, f) -> "(" ^ Arith.print_size size ^ " " ^ print_hfl f ^ ")"
   | And(f1, f2) -> "(" ^ print_hfl f1 ^ " /\\ " ^ print_hfl f2 ^ ")"
   | Or(f1, f2) -> "(" ^ print_hfl f1 ^ " \\/ " ^ print_hfl f2 ^ ")"
-  | Abs(v, f) -> "\\" ^ v ^ "." ^ print_hfl f
+  | Abs(v, f) -> "(\\" ^ v ^ "." ^ print_hfl f ^ ")"
   | App(f1, f2) -> "(" ^ print_hfl f1 ^ " " ^ print_hfl f2 ^ ")"
   | Forall(v, f) -> "∀" ^ v ^ "." ^ print_hfl f
   | Exists(v, f) -> "∃" ^ v ^ "." ^ print_hfl f
