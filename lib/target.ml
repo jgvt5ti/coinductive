@@ -1,5 +1,6 @@
 open Arith
 open Id
+open Util
 
 type ty 
   = TyVar of ty option
@@ -100,9 +101,10 @@ let rec beta t = match t with
   | MatchList(t0, ls) ->
     let ls' = List.map (fun (pat, ti) -> (pat, beta ti)) ls in
     MatchList(t0, ls')
-  | FixExpr(v, t0) -> FixExpr(v, beta t0)
+  | FixExpr(v, t0) -> 
+    FixExpr(v, beta t0)
   | Abs(v, t0) -> Abs(v, beta t0)
-  | App(t1, t2) -> App(t1, beta t2)
+  | App(t1, t2) -> App(beta t1, beta t2)
   | _ -> t
 
 let rec cps_trans_ty ty = match ty with
@@ -113,12 +115,15 @@ let rec cps_trans_ty ty = match ty with
     TyFun(TyFun(t, TyUnit), TyUnit)
   | TyVar _ -> assert false
 
-let rec cps_trans t = match t with
+let rec cps_trans env t = match t with
   | Var v ->
     let kty = cps_trans_ty v.ty in
     let kvar = gen kty in
     let k = Var kvar in
-    Abs(kvar, App(t, k))
+    if SS.mem v.name env then
+      Abs(kvar, App(k, t))
+    else
+      Abs(kvar, App(t, k))
   | Num _ ->
     let kty = cps_trans_ty TyInt in
     let kvar = gen kty in
@@ -130,18 +135,11 @@ let rec cps_trans t = match t with
     let k = Var kvar in
     Abs(kvar, App(k, t))
   | Abs (v, t) ->
-    let kty = cps_trans_ty TyUnit in
-    let kvar = gen kty in
-    let k = Var kvar in
-    Abs (kvar, App(k, Abs(v, cps_trans t)))
+    let env = if v.ty = TyList then SS.add v.name env else env in
+    Abs(v, cps_trans env t)
+  | App (Var _, _) -> t
   | App (t1, t2) ->
-    let kty = cps_trans_ty TyUnit in
-    let kvar = gen kty in
-    let k = Var kvar in
-    let mty = cps_trans_ty TyUnit in
-    let mvar = gen mty in
-    let m = Var mvar in
-    Abs(kvar, App(cps_trans t1, Abs(mvar, App(App(m, cps_trans t2), k))))
+    App(cps_trans env t1, cps_trans env t2)
   | If0Expr (t, t1, t2) ->
     let kty = cps_trans_ty TyUnit in
     let kvar = gen kty in
@@ -149,8 +147,8 @@ let rec cps_trans t = match t with
     let mty = cps_trans_ty TyUnit in
     let mvar = gen mty in
     let m = Var mvar in
-    let body = Abs(mvar, If0Expr (m, App(cps_trans t1, k), App(cps_trans t2, k))) in
-    Abs(kvar, App(cps_trans t, body))
+    let body = Abs(mvar, If0Expr (m, App(cps_trans env t1, k), App(cps_trans env t2, k))) in
+    Abs(kvar, App(cps_trans env t, body))
   | MatchList(t, ls) ->
     let kty = cps_trans_ty TyUnit in
     let kvar = gen kty in
@@ -158,20 +156,22 @@ let rec cps_trans t = match t with
     let mty = cps_trans_ty TyUnit in
     let mvar = gen mty in
     let m = Var mvar in
-    let f = fun (pat, ti) ->
-      (pat, App(cps_trans ti, k)) in
+    let f (pat, ti) = match pat with
+      | NilPat -> (pat, App(cps_trans env ti, k))
+    | ConsPat (_, v) ->
+        let env = SS.add v.name env in
+        (pat, App(cps_trans env ti, k))
+    in
     let body = Abs(mvar, MatchList(m, List.map f ls)) in
-    Abs(kvar, App(cps_trans t, body))
+    Abs(kvar, App(cps_trans env t, body))
   | FixExpr (v, t) ->
-    FixExpr (v, cps_trans t)
+    FixExpr (v, cps_trans env t)
   | _ -> t
 
 (* t: list -> int*)
 let cps_trans_top lvar t =
-  let top = cps_trans t in (* top: (((list -> . -> .) -> (int -> .) -> .) -> .) -> . *)
-  let cvar = gen (TyFun(TyList, TyUnit)) in
-  let cps_ls = Abs(cvar, App (Var cvar, Var lvar)) in
+  let top = cps_trans SS.empty t in
+  (*top: list -> (int -> * ) -> * *)
   let kvar = gen TyInt in
   let cont = Abs(kvar, Unit) in
-  let kvar2 = gen TyInt in
-  App(top, Abs(kvar2, App(App(Var kvar2, cps_ls), cont)))
+  App(App(top, Var lvar), cont)

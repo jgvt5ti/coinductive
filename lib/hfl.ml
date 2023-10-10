@@ -29,6 +29,21 @@ type hes_rule =
 type hes = hes_rule list
   [@@deriving eq,ord,show]
 
+let rec sbst v f f' = match f' with
+  | Var v' when v = v' -> f
+  | Var _ | Bool _ | Int _ -> f'
+  | Or (f1, f2) -> Or (sbst v f f1, sbst v f f2)
+  | And (f1, f2) -> And (sbst v f f1, sbst v f f2)
+  | Abs (v', f1) -> Abs (v', sbst v f f1)
+  | App (f1, f2) -> App (sbst v f f1, sbst v f f2)
+  | Op(op, ls) -> Op(op, List.map (sbst v f) ls)
+  | Opl(op, ls1, ls2) -> Opl(op, List.map (sbst v f) ls1, List.map (sbst v f) ls2)
+  | Size(size, f1) -> Size(size, sbst v f f1)
+  | Pred(pred, ls1, ls2) -> Pred(pred, List.map (sbst v f) ls1, List.map (sbst v f) ls2)
+  | Forall(v, f1) -> Forall(v, sbst v f f1)
+  | Exists(v, f1) -> Exists(v, sbst v f f1)
+  | Not(f1) -> Not(sbst v f f1)
+
 let rec and_fold ls = match ls with
   | [f] -> f
   | f::ls' -> And (f, and_fold ls')

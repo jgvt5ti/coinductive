@@ -36,6 +36,7 @@ let rec trans source = match source with
   | S.Tuple (ls) ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
+    let patNil = (T.NilPat, T.Num 0) in
     let size = List.length ls in
     let nums = range 0 (size - 1) in
     let args = List.combine ls nums in
@@ -43,7 +44,7 @@ let rec trans source = match source with
       let var = gen T.TyList in
       (T.ConsPat(n, var), T.App (trans s, Var var))
       in
-    T.Abs(argvar, T.MatchList (arg, List.map f args))
+    T.Abs(argvar, T.MatchList (arg, patNil :: (List.map f args)))
   | S.Proj (i, s) ->
     let argvar = gen T.TyList in
     let path = T.Cons (Num i, T.Var argvar) in
@@ -102,11 +103,11 @@ let rec toRules (env: SS.t) t = match t with
       let (fi, hi) = toRules env ti in match pat with
     | T.NilPat -> (Hfl.Or (Hfl.Pred(Neql, [], [Hfl.Opl(Nil, [], []); f]), fi), hi)
     | T.ConsPat (n, v) ->
+      let condNil = Hfl.Pred(Eql, [], [Hfl.Opl(Nil, [], []); f]) in
       let condHead = Hfl.Pred(Neq, [Hfl.Size(Head, f); Hfl.Int n], []) in
-      let condTail = Hfl.Pred(Neql, [], [Hfl.Opl(Tail, [], [f]); Hfl.Var v.name]) in
       let env = SS.add v.name env in
       let (fi, hi) = toRules env ti in
-      (Hfl.or_fold [condHead; condTail; fi], hi)
+      (Hfl.or_fold [condNil; condHead; Hfl.sbst v.name (Hfl.Opl(Arith.Tail, [],[f])) fi], hi)
     in
     let (fml, hes) = List.split @@ List.map sub pats in
     (Hfl.and_fold fml, h @ List.concat hes)
@@ -114,9 +115,10 @@ let rec toRules (env: SS.t) t = match t with
     let lvar = Id.gen T.TyList in
     let cvar = Id.gen @@ T.TyFun(T.TyInt, T.TyUnit) in
     let ss = SS.of_list [v.name; lvar.name; cvar.name] in
+    let t = T.beta @@ T.App(T.App(t, T.Var lvar), T.Var cvar) in
     let newenv = SS.union ss env in
     let (f, h) = toRules newenv t in
-    let hes: Hfl.hes_rule = { var = v.name; args = [cvar.name; lvar.name] @ SS.elements env; fix = Hfl.Mu; body = f} in
+    let hes: Hfl.hes_rule = { var = v.name; args = [lvar.name; cvar.name] @ SS.elements env; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 
 let toHES lvar t =
