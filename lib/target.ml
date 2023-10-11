@@ -29,10 +29,10 @@ type expr
   | FixExpr of ty Id.t * expr
   [@@deriving eq,ord,show]
 
-
 let print_pat pat = match pat with
   | NilPat -> "[] -> "
   | ConsPat (n, x) -> string_of_int n ^ "::" ^ x.name ^ " -> "
+
 let rec print_tgt t = match t with
   | Var v -> v.name
   | Unit -> "*"
@@ -107,6 +107,8 @@ let rec beta t = match t with
   | App(t1, t2) -> App(beta t1, beta t2)
   | _ -> t
 
+let rec cont_ty ty = TyFun(ty, TyUnit)
+
 let rec cps_trans_ty ty = match ty with
   | TyUnit -> TyUnit
   | TyInt | TyList -> TyFun(TyFun(ty, TyUnit), TyUnit)
@@ -117,18 +119,20 @@ let rec cps_trans_ty ty = match ty with
 
 let rec cps_trans env t = match t with
   | Var v ->
-    let kty = cps_trans_ty v.ty in
+    let kty = cont_ty v.ty in
     let kvar = gen kty in
     let k = Var kvar in
     if SS.mem v.name env then
       Abs(kvar, App(k, t))
     else
-      Abs(kvar, App(t, k))
+      Abs(kvar, App(Var {v with ty=cps_trans_ty v.ty}, k))
   | Num _ ->
-    let kty = cps_trans_ty TyInt in
+    let kty = cont_ty TyInt in
     let kvar = gen kty in
     let k = Var kvar in
     Abs(kvar, App(k, t))
+  | Op(op, t1, t2) -> t
+  | Cons(t1, t2) -> t
   | Nil ->
     let kty = cps_trans_ty TyList in
     let kvar = gen kty in
@@ -166,7 +170,7 @@ let rec cps_trans env t = match t with
     Abs(kvar, App(cps_trans env t, body))
   | FixExpr (v, t) ->
     FixExpr (v, cps_trans env t)
-  | _ -> t
+  | Unit -> Unit
 
 (* t: list -> int*)
 let cps_trans_top lvar t =

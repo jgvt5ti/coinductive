@@ -118,7 +118,7 @@ let rec toRules (env: SS.t) t = match t with
     let t = T.beta @@ T.App(T.App(t, T.Var lvar), T.Var cvar) in
     let newenv = SS.union ss env in
     let (f, h) = toRules newenv t in
-    let hes: Hfl.hes_rule = { var = v.name; args = [lvar.name; cvar.name] @ SS.elements env; fix = Hfl.Mu; body = f} in
+    let hes: Hfl.hes_rule = { var = v.name; args = [lvar.name; cvar.name]; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 
 let toHES lvar t =
