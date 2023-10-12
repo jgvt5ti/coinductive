@@ -37,6 +37,13 @@ let mk_inj n t = InExpr(n, t)
 let mk_case t v t1 t2 = MatchExpr(mk_id v, t, t1, t2)
 let mk_fix v t = FixExpr(mk_id v, t)
 
+let mk_apps t ls =
+  let rec sub f ls = match ls with 
+    | [] -> f
+    | x :: ls' -> sub (App(f, x)) ls'
+  in
+  sub t ls
+
 let rec fixvars env t = match t with
   | Var v -> begin match MS.find_opt v.name env with
     | None -> Var v

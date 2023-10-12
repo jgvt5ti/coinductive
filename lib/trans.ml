@@ -13,6 +13,11 @@ let transId id =
   {id with ty = transTy id.ty}
 
 let rec range m n = if m > n then [] else m :: range (m+1) n
+
+let trans_ s = match s with
+  | S.Var v -> T.Var (transId v)
+  | S.Num n -> T.Num n
+  | _ -> assert false
   
 let rec trans source = match source with
   | S.Var v -> T.Var (transId v)
@@ -24,7 +29,7 @@ let rec trans source = match source with
   | S.Op (op, s1, s2) ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
-    let patNil = (T.NilPat, T.Op(op, trans s1, trans s2)) in
+    let patNil = (T.NilPat, T.Op(op, trans_ s1, trans_ s2)) in
     T.Abs(argvar, T.MatchList (arg, [patNil]))
   | S.Abs (v, s) -> T.Abs (transId v, trans s)
   | S.App (s1, s2) -> T.App(trans s1, trans s2)

@@ -21,28 +21,24 @@ expr:
 | abs_expr { $1 }
 
 abs_expr:
-| "\\"  IDENT "." struct_expr    { mk_abs $2 $4 }
-| "fix" IDENT "." struct_expr    { mk_fix $2 $4 }
+| "\\"  IDENT "." abs_expr    { mk_abs $2 $4 }
+| "fix" IDENT "." abs_expr    { mk_fix $2 $4 }
 | struct_expr { $1 }
 
 struct_expr:
 | "[" list_fields "]"            { mk_tuple $2  }
-| "inj" INT "(" arith_expr ")"   { mk_inj $2 $4 }
-| "prj" INT "(" arith_expr ")"   { mk_prj $2 $4 }
-| "case" arith_expr "(" IDENT "." arith_expr ";" IDENT "." arith_expr ")"
+| "inj" INT "(" struct_expr ")"   { mk_inj $2 $4 }
+| "prj" INT "(" struct_expr ")"   { mk_prj $2 $4 }
+| "case" struct_expr "(" IDENT "." struct_expr ";" IDENT "." struct_expr ")"
     {mk_case $2 $4 $6 $10}
-| arith_expr { $1 }
+| struct_expr op struct_expr { mk_op $2 $1 $3 }
+| app_expr { $1 }
 
 list_fields:
     vl = separated_list(SEMICOLON, struct_expr) { vl }
 
-arith_expr:
-| app_expr                 { $1             }
-| arith_expr op arith_expr { mk_op $2 $1 $3 }
-
 app_expr:
-| "(" atom atom ")" { mk_app $2 $3 }
-| atom { $1 }
+| atom atom* { mk_apps $1 $2 }
 
 atom:
 | INT  { mk_num   $1 }

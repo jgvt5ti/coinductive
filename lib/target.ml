@@ -129,7 +129,10 @@ let rec unify ls =
     (v, ty1) :: (compose v ty1 sb)
   | (TyFun (ty11, ty12), TyFun(ty21, ty22)) :: ls' ->
     unify @@ ((ty11, ty21) :: (ty12, ty22) :: ls')
-  | _ -> assert false
+  | (ty1, ty2) :: _ ->
+    print_endline (show_ty ty1);
+    print_endline (show_ty ty2);
+    assert false
 
 let rec apply_sbst_ty sbst ty = match ty with
   | TyVar v -> (match List.find_opt (fun (v', _) -> v = v') sbst with
@@ -171,9 +174,11 @@ let rec ty_of_expr t = match t with
   | Num _ | Op _ -> TyInt
   | Nil | Cons _ -> TyList
   | Abs(v, t1) -> TyFun(v.ty, ty_of_expr t1)
-  | App(t1, t2) -> (match ty_of_expr t1 with
-    | TyFun(ty1, ty2) when ty1 = ty_of_expr t2 -> ty2
-    | _ -> assert false
+  | App(t1, _) -> (match ty_of_expr t1 with
+    | TyFun(_, ty2) -> ty2
+    | ty ->
+      print_endline (show_ty ty);
+      assert false
   )
   | If0Expr(t0, t1, t2) ->
     assert (ty_of_expr t0 = TyInt);
