@@ -5,9 +5,10 @@ let main () =
   let src = Source.fixvars Util.MS.empty src in
   print_endline "Source ----------------------";
   print_endline @@ Source.show_expr src;
-  let tgt = Target.beta @@ Trans.trans src in
+  let tgt = Target.to_typed @@ Target.beta @@ Trans.trans src in
   print_endline "Translated ------------------";
   print_endline @@ Target.print_tgt tgt;
+  (* print_endline @@ Target.show_expr tgt; *)
   let top_var = Id.gen Target.TyList in
   let cps = Target.beta @@ (Target.cps_trans_top top_var tgt) in
   print_endline "CPS -------------------------";

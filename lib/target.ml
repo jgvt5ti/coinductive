@@ -3,7 +3,7 @@ open Id
 open Util
 
 type ty 
-  = TyVar of ty option
+  = TyVar of unit Id.t
   | TyUnit
   | TyInt
   | TyList
@@ -57,6 +57,98 @@ let rec print_tgt t = match t with
     "(match " ^ print_tgt t ^ " with (" ^ f pats_str ^ "))"
   | FixExpr(v, t) ->
     "(fix " ^ v.name ^ ". " ^ print_tgt t ^ ")"
+
+let rec gen_constraint t = match t with
+  | Var v -> v.ty, []
+  | Unit -> TyUnit, []
+  | Num _ -> TyInt, []
+  | Nil -> TyList, []
+  | Op(_, t1, t2) ->
+    let (ty1, c1) = gen_constraint t1 in
+    let (ty2, c2) = gen_constraint t2 in
+    (TyInt, [(ty1, TyInt); (ty2, TyInt)] @ c1 @ c2)
+  | Cons(t1, t2) ->
+    let (ty1, c1) = gen_constraint t1 in
+    let (ty2, c2) = gen_constraint t2 in
+    (TyList, [(ty1, TyInt); (ty2, TyList)] @ c1 @ c2)
+  | Abs(v, t1) ->
+    let (ty1, c1) = gen_constraint t1 in
+    (TyFun(v.ty, ty1), c1)
+  | App(t1, t2) ->
+    let (ty1, c1) = gen_constraint t1 in
+    let (ty2, c2) = gen_constraint t2 in
+    let ty = TyVar (Id.gen ()) in
+    (ty, [(ty1, TyFun(ty2, ty))] @ c1 @ c2)
+  | If0Expr(t0, t1, t2) ->
+    let (ty0, c0) = gen_constraint t0 in
+    let (ty1, c1) = gen_constraint t1 in
+    let (ty2, c2) = gen_constraint t2 in
+    (ty1, [(ty0, TyInt); (ty1, ty2)] @ c0 @ c1 @ c2)
+  | MatchList(t0, ls) ->
+    let (ty0, c0) = gen_constraint t0 in
+    let (tys, cs) = List.split @@ List.map (fun (_, ti) -> gen_constraint ti) ls in
+    let cs = List.flatten cs in
+    (List.hd tys, [(ty0, TyList)] @ c0 @ cs)
+  | FixExpr(v, t0) ->
+    let (ty0, c0) = gen_constraint t0 in
+    (ty0, [(ty0, v.ty)] @ c0)
+
+let rec sbst_ty v ty ty' = match ty' with
+  | TyVar v' when v = v' -> ty
+  | TyVar _ | TyUnit | TyInt | TyList -> ty'
+  | TyFun (ty1, ty2) -> TyFun(sbst_ty v ty ty1, sbst_ty v ty ty2)
+
+let rec unify ls = 
+  let sbst f ls = List.map (fun (ty1, ty2) -> (f ty1, f ty2)) ls in
+  let compose v ty ls = List.map (fun(v', ty1) -> (v', sbst_ty v ty ty1)) ls in
+  match ls with
+  | [] -> []
+  | (ty1, ty2) :: ls' when ty1 = ty2 -> unify ls'
+  | (TyVar v, ty2) :: ls' ->
+    let ls' = sbst (sbst_ty v ty2) ls' in
+    let sb = unify ls' in
+    (v, ty2) :: (compose v ty2 sb)
+  | (ty1, TyVar v) :: ls' ->
+    let ls' = sbst (sbst_ty v ty1) ls' in
+    let sb = unify ls' in
+    (v, ty1) :: (compose v ty1 sb)
+  | (TyFun (ty11, ty12), TyFun(ty21, ty22)) :: ls' ->
+    unify @@ ((ty11, ty21) :: (ty12, ty22) :: ls')
+  | _ -> assert false
+
+let rec apply_sbst_ty sbst ty = match ty with
+  | TyVar v -> (match List.find_opt (fun (v', _) -> v = v') sbst with
+    | Some (_, ty') -> ty'
+    | None -> ty)
+  | TyFun (ty1, ty2) -> TyFun (apply_sbst_ty sbst ty1, apply_sbst_ty sbst ty2)
+  | _ -> ty
+
+let rec apply_sbst sbst t = match t with
+  | Var v -> Var {v with ty = apply_sbst_ty sbst v.ty}
+  | Unit | Num _ | Nil -> t
+  | Abs(v, t1) ->
+    let v = {v with ty = apply_sbst_ty sbst v.ty} in
+    Abs(v, apply_sbst sbst t1)
+  | App(t1, t2) ->
+    App(apply_sbst sbst t1, apply_sbst sbst t2)
+  | Op(op, t1, t2) ->
+    Op(op, apply_sbst sbst t1, apply_sbst sbst t2)
+  | Cons(t1, t2) ->
+    Cons(apply_sbst sbst t1, apply_sbst sbst t2)
+  | If0Expr(t0, t1, t2) ->
+    If0Expr(apply_sbst sbst t0, apply_sbst sbst t1, apply_sbst sbst t2)
+  | MatchList(t0, ls) ->
+    let t0 = apply_sbst sbst t0 in
+    let ls = List.map (fun (pat, ti) -> (pat, apply_sbst sbst ti)) ls in
+    MatchList(t0, ls)
+  | FixExpr(v, t1) ->
+    let v = {v with ty = apply_sbst_ty sbst v.ty} in
+    FixExpr(v, apply_sbst sbst t1)
+
+let to_typed t =
+  let (_, cs) = gen_constraint t in
+  let sbst = unify cs in
+  apply_sbst sbst t
 
 let rec ty_of_expr t = match t with
   | Var v -> v.ty
