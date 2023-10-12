@@ -15,7 +15,7 @@ let transId id =
 let rec range m n = if m > n then [] else m :: range (m+1) n
 
 let rec trans source = match source with
-  | S.Var v -> T.Var (transId v)
+  | S.Var v -> T.Var {v with ty=TyVar(Id.gen ())} (* TODO: sourceの型検査ができたらtransIdをつかう*)
   | S.Num n ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
@@ -26,7 +26,7 @@ let rec trans source = match source with
     let arg = T.Var argvar in
     let patNil = (T.NilPat, T.Op(op, App(trans s1, arg), App(trans s2, arg))) in
     T.Abs(argvar, T.MatchList (arg, [patNil]))
-  | S.Abs (v, s) -> T.Abs (transId v, trans s)
+  | S.Abs (v, s) -> T.Abs ({v with ty=TyVar(Id.gen ())}, trans s)
   | S.App (s1, s2) -> T.App(trans s1, trans s2)
   | S.Tuple (ls) ->
     let argvar = gen T.TyList in
@@ -52,14 +52,14 @@ let rec trans source = match source with
     let pat0 = (T.ConsPat(0, gen T.TyList), T.App (trans s, arg)) in
     T.Abs(argvar, T.MatchList (arg, [patNil; pat0]))
   | S.FixExpr (v, t) ->
-    T.FixExpr (transId v, trans t)
+    T.FixExpr ({v with ty=TyVar(Id.gen ())}, trans t)
   | S.MatchExpr (v, s, s0, s1) ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
     let path = T.Cons (Num 0, arg) in
     let func = trans s in
     let lambda = T.Abs (argvar, T.App (func, path)) in
-    let var = transId v in    
+    let var = {v with ty=T.TyVar(Id.gen ())} in    
     let t0 = T.sbst var lambda (trans s0) in
     let t1 = T.sbst var lambda (trans s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)

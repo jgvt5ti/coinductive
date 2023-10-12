@@ -29,6 +29,13 @@ type expr
   | FixExpr of ty Id.t * expr
   [@@deriving eq,ord,show]
 
+let rec print_ty ty = match ty with
+  | TyVar v -> v.name
+  | TyUnit -> "*"
+  | TyInt -> "Int"
+  | TyList -> "List"
+  | TyFun(ty1, ty2) -> "(" ^ print_ty ty1 ^ " -> " ^ (print_ty ty2) ^ ")"
+
 let print_pat pat = match pat with
   | NilPat -> "[] -> "
   | ConsPat (n, x) -> string_of_int n ^ "::" ^ x.name ^ " -> "
@@ -43,7 +50,7 @@ let rec print_tgt t = match t with
   | Cons(t1, t2) ->
     "(" ^ print_tgt t1 ^ "::" ^ print_tgt t2 ^ ")"
   | Abs(v, t) ->
-    "(\\" ^ v.name ^ ". " ^ print_tgt t ^ ")"
+    "(\\" ^ v.name ^ ": " ^ (print_ty v.ty) ^ ". " ^ print_tgt t ^ ")"
   | App(t1, t2) ->
     "(" ^ print_tgt t1 ^ " " ^ print_tgt t2 ^ ")"
   | If0Expr(t0, t1, t2) ->
@@ -56,7 +63,7 @@ let rec print_tgt t = match t with
     | s::ls -> s ^ " | " ^ f ls in
     "(match " ^ print_tgt t ^ " with (" ^ f pats_str ^ "))"
   | FixExpr(v, t) ->
-    "(fix " ^ v.name ^ ". " ^ print_tgt t ^ ")"
+    "(fix " ^ v.name ^ ": " ^ (print_ty v.ty) ^ ". " ^ print_tgt t ^ ")"
 
 let rec fix_vars t = match t with
   | FixExpr(v, t) -> v.name :: fix_vars t
@@ -101,9 +108,16 @@ let rec gen_constraint t = match t with
     (ty1, [(ty0, TyInt); (ty1, ty2)] @ c0 @ c1 @ c2)
   | MatchList(t0, ls) ->
     let (ty0, c0) = gen_constraint t0 in
-    let (tys, cs) = List.split @@ List.map (fun (_, ti) -> gen_constraint ti) ls in
+    let pat_c pat = match pat with
+      | NilPat -> []
+      | ConsPat (_, v) -> [(v.ty, TyList)]
+    in
+    let (tys, cs) = List.split @@ List.map (fun (_, ti) -> (gen_constraint ti)) ls in
+    let tybody = List.hd tys in
+    let cbody = List.map (fun tyi -> (tybody, tyi)) (List.tl tys) in
+    let cpats = List.concat @@ List.map (fun (pat, _) -> pat_c pat) ls in
     let cs = List.flatten cs in
-    (List.hd tys, [(ty0, TyList)] @ c0 @ cs)
+    (tybody, [(ty0, TyList)] @ c0 @ cbody @ cpats @ cs)
   | FixExpr(v, t0) ->
     let (ty0, c0) = gen_constraint t0 in
     (ty0, [(ty0, v.ty)] @ c0)
@@ -130,8 +144,9 @@ let rec unify ls =
   | (TyFun (ty11, ty12), TyFun(ty21, ty22)) :: ls' ->
     unify @@ ((ty11, ty21) :: (ty12, ty22) :: ls')
   | (ty1, ty2) :: _ ->
-    print_endline (show_ty ty1);
-    print_endline (show_ty ty2);
+    print_endline "unification failed";
+    print_endline (print_ty ty1);
+    print_endline (print_ty ty2);
     assert false
 
 let rec apply_sbst_ty sbst ty = match ty with
@@ -165,7 +180,9 @@ let rec apply_sbst sbst t = match t with
 
 let to_typed t =
   let (_, cs) = gen_constraint t in
+  (* List.iter (fun (ty1, ty2) -> print_endline @@ (print_ty ty1) ^ " = " ^ (print_ty ty2)) cs; *)
   let sbst = unify cs in
+  (* List.iter (fun (v, ty) -> print_endline @@ v.name ^ ": " ^ (print_ty ty)) sbst; *)
   apply_sbst sbst t
 
 let rec ty_of_expr t = match t with
@@ -174,10 +191,12 @@ let rec ty_of_expr t = match t with
   | Num _ | Op _ -> TyInt
   | Nil | Cons _ -> TyList
   | Abs(v, t1) -> TyFun(v.ty, ty_of_expr t1)
-  | App(t1, _) -> (match ty_of_expr t1 with
-    | TyFun(_, ty2) -> ty2
-    | ty ->
-      print_endline (show_ty ty);
+  | App(t1, t2) -> (match ty_of_expr t1 with
+    | TyFun(ty1, ty2) when ty_of_expr t2 = ty1 -> ty2
+    | _ ->
+      print_endline (print_tgt t);
+      print_endline @@ "t1: " ^ (print_ty (ty_of_expr t1));
+      print_endline @@ "t2: " ^ (print_ty (ty_of_expr t2));
       assert false
   )
   | If0Expr(t0, t1, t2) ->
@@ -250,7 +269,7 @@ let rec cps_trans_ty ty = match ty with
   | TyInt -> TyFun(TyFun(TyInt, TyUnit), TyUnit)
   | TyFun(ty1, ty2) -> 
     TyFun(cps_trans_ty ty1, cps_trans_ty ty2)
-  | TyVar _ -> assert false
+  | TyVar v -> TyVar v
 
 let rec cps_trans env t = match t with
   | Var v ->
@@ -271,12 +290,12 @@ let rec cps_trans env t = match t with
     let t2' = cps_trans env t2 in
     let x1 = gen TyInt in
     let x2 = gen TyInt in
-    let cont2 = Abs(x2, Op(op, Var x1, Var x2)) in
-    let cont1 = Abs(x1, App(t2', cont2)) in
     let kty = cont_ty TyInt in
     let kvar = gen kty in
     let k = Var kvar in
-    Abs(kvar, App(k, App(t1', cont1)))
+    let cont2 = Abs(x2, App(k, Op(op, Var x1, Var x2))) in
+    let cont1 = Abs(x1, App(t2', cont2)) in
+    Abs(kvar, App(t1', cont1))
   | Nil | Cons _ -> t
   | Abs (v, t) ->
     let v = {v with ty= cps_trans_ty v.ty} in
