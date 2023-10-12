@@ -1,5 +1,5 @@
 open Transformer
-let repl () =
+let main () =
   print_endline "Hello!";
   let src = Parser.main Lexer.token (Lexing.from_channel stdin) in
   let src = Source.fixvars Util.MS.empty src in
@@ -16,4 +16,4 @@ let repl () =
   print_endline "HFL -------------------------";
   print_endline @@ Hfl.print_hes hes
 
-let _ = repl()
+let _ = main()

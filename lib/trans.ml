@@ -118,6 +118,9 @@ let rec toRules (env: SS.t) t = match t with
     let t = T.beta @@ T.App(T.App(t, T.Var lvar), T.Var cvar) in
     let newenv = SS.union ss env in
     let (f, h) = toRules newenv t in
+    let fvars = SS.diff (Hfl.free_vars f) (SS.of_list [v.name]) in
+    let newv = Hfl.app_fold_vars v.name (SS.elements fvars) in
+    let f = Hfl.sbst v.name newv f in
     let hes: Hfl.hes_rule = { var = v.name; args = [lvar.name; cvar.name]; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 

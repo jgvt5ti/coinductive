@@ -1,3 +1,5 @@
+open Util
+
 type hfl_listz =
   | Bool of bool
   | Var  of string
@@ -44,6 +46,21 @@ let rec sbst v f f' = match f' with
   | Exists(v, f1) -> Exists(v, sbst v f f1)
   | Not(f1) -> Not(sbst v f f1)
 
+let rec free_vars f = match f with
+  | Var v -> SS.of_list [v]
+  | Bool _ | Int _ -> SS.empty
+  | Or (f1, f2) | And (f1, f2) | App (f1, f2)
+    -> SS.union (free_vars f1) (free_vars f2)
+  | Abs (v, f1) | Forall (v, f1) | Exists (v, f1)
+    -> SS.diff (free_vars f1) (SS.of_list [v])
+  | Size (_, f1) | Not (f1) -> free_vars f1
+  | Op (_, ls) ->
+    SS.of_list @@ List.flatten @@ List.map (fun f -> SS.elements (free_vars f)) ls
+  | Pred (_, ls1, ls2) | Opl(_, ls1, ls2) ->
+    let fs1 = List.flatten @@ List.map (fun f -> SS.elements (free_vars f)) ls1 in
+    let fs2 = List.flatten @@ List.map (fun f -> SS.elements (free_vars f)) ls2 in
+    SS.of_list (fs1 @ fs2)
+
 let rec and_fold ls = match ls with
   | [f] -> f
   | f::ls' -> And (f, and_fold ls')
@@ -53,6 +70,13 @@ let rec or_fold ls = match ls with
   | [f] -> f
   | f::ls' -> Or (f, or_fold ls')
   | _ -> assert false
+
+let app_fold_vars v ls =
+  let rec sub f ls = match ls with 
+    | [] -> f
+    | v' :: ls' -> sub (App(f, Var v')) ls'
+  in
+  sub (Var v) ls
 
 let print_fix = function
   | Mu -> "m"

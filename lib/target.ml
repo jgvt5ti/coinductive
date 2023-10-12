@@ -58,6 +58,30 @@ let rec print_tgt t = match t with
   | FixExpr(v, t) ->
     "(fix " ^ v.name ^ ". " ^ print_tgt t ^ ")"
 
+let rec ty_of_expr t = match t with
+  | Var v -> v.ty
+  | Unit -> TyUnit
+  | Num _ | Op _ -> TyInt
+  | Nil | Cons _ -> TyList
+  | Abs(v, t1) -> TyFun(v.ty, ty_of_expr t1)
+  | App(t1, t2) -> (match ty_of_expr t1 with
+    | TyFun(ty1, ty2) when ty1 = ty_of_expr t2 -> ty2
+    | _ -> assert false
+  )
+  | If0Expr(t0, t1, t2) ->
+    assert (ty_of_expr t0 = TyInt);
+    let ty1 = ty_of_expr t1 in
+    let ty2 = ty_of_expr t2 in
+    if ty1 = ty2 then ty1 else assert false
+  | MatchList(t0, ls) ->
+    assert (ty_of_expr t0 = TyList);
+    let tys = List.map (fun (_, ti) -> ty_of_expr ti) ls in
+    List.hd tys
+  | FixExpr(v, t1) ->
+      let ty = ty_of_expr t1 in
+      assert (v.ty = ty);
+      ty
+
 let rec sbst v t t' = match t' with
   | Var v1 when v.id = v1.id -> t
   | Var v1 -> Var v1
@@ -107,7 +131,7 @@ let rec beta t = match t with
   | App(t1, t2) -> App(beta t1, beta t2)
   | _ -> t
 
-let rec cont_ty ty = TyFun(ty, TyUnit)
+let cont_ty ty = TyFun(ty, TyUnit)
 
 let rec cps_trans_ty ty = match ty with
   | TyUnit -> TyUnit
@@ -131,8 +155,8 @@ let rec cps_trans env t = match t with
     let kvar = gen kty in
     let k = Var kvar in
     Abs(kvar, App(k, t))
-  | Op(op, t1, t2) -> t
-  | Cons(t1, t2) -> t
+  | Op(_, _, _) -> t
+  | Cons(_, _) -> t
   | Nil ->
     let kty = cps_trans_ty TyList in
     let kvar = gen kty in
