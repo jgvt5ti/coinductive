@@ -261,11 +261,22 @@ let rec cps_trans env t = match t with
       let kvar = gen kty in
       let k = Var kvar in
       Abs(kvar, App(Var {v with ty=cps_trans_ty v.ty}, k))
-  | Num _ | Op(_, _, _) ->
+  | Num _ ->
     let kty = cont_ty TyInt in
     let kvar = gen kty in
     let k = Var kvar in
     Abs(kvar, App(k, t))
+  | Op(op, t1, t2) ->
+    let t1' = cps_trans env t1 in
+    let t2' = cps_trans env t2 in
+    let x1 = gen TyInt in
+    let x2 = gen TyInt in
+    let cont2 = Abs(x2, Op(op, Var x1, Var x2)) in
+    let cont1 = Abs(x1, App(t2', cont2)) in
+    let kty = cont_ty TyInt in
+    let kvar = gen kty in
+    let k = Var kvar in
+    Abs(kvar, App(k, App(t1', cont1)))
   | Nil | Cons _ -> t
   | Abs (v, t) ->
     let v = {v with ty= cps_trans_ty v.ty} in
