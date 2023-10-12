@@ -12,13 +12,8 @@ let rec transTy tys = match tys with
 let transId id =
   {id with ty = transTy id.ty}
 
-let rec transArith = function
-    AVar v ->  AVar {v with ty = T.TyInt}
-  | Num n -> Num n
-  | Op (op, a1, a2) -> Op (op, transArith a1, transArith a2)
-
 let rec range m n = if m > n then [] else m :: range (m+1) n
-
+  
 let rec trans source = match source with
   | S.Var v -> T.Var (transId v)
   | S.Num n ->
@@ -69,63 +64,59 @@ let rec trans source = match source with
     let t1 = T.sbst var lambda (trans s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)
 
-let rec toRules (env: SS.t) t = match t with
+let rec toRules fixs t = match t with
   | T.Var v -> (Hfl.Var v.name, [])
   | T.Unit -> (Hfl.Bool true, [])
   | T.Num n -> (Hfl.Int n, [])
   | T.Op(op, t1, t2) ->
-    let (f1, h1) = toRules env t1 in
-    let (f2, h2) = toRules env t2 in
+    let (f1, h1) = toRules fixs t1 in
+    let (f2, h2) = toRules fixs t2 in
     (Hfl.Op(op, [f1; f2]), h1 @ h2)
   | T.Abs(v, t) ->
-    let env = SS.add v.name env in
-    let (f, h) = toRules env t in
+    let (f, h) = toRules fixs t in
     (Hfl.Abs(v.name, f), h)
   | T.App(t1, t2) ->
-    let (f1, h1) = toRules env t1 in
-    let (f2, h2) = toRules env t2 in
+    let (f1, h1) = toRules fixs t1 in
+    let (f2, h2) = toRules fixs t2 in
     (Hfl.App(f1, f2), h1 @ h2)
   | T.Nil -> (Hfl.Opl(Nil, [], []), [])
   | T.Cons (t1, t2) -> 
-    let (f1, h1) = toRules env t1 in
-    let (f2, h2) = toRules env t2 in
+    let (f1, h1) = toRules fixs t1 in
+    let (f2, h2) = toRules fixs t2 in
     (Hfl.Opl(Cons, [f1], [f2]), h1 @ h2)
   | T.If0Expr (t0, t1, t2) ->
-    let (f0, h0) = toRules env t0 in
-    let (f1, h1) = toRules env t1 in
-    let (f2, h2) = toRules env t2 in
+    let (f0, h0) = toRules fixs t0 in
+    let (f1, h1) = toRules fixs t1 in
+    let (f2, h2) = toRules fixs t2 in
     let f1 = Hfl.Or(Hfl.Pred(Neq, [Hfl.Int 0; f0], []), f1) in
     let f2 = Hfl.Or(Hfl.Pred(Eq, [Hfl.Int 0; f0], []), f2) in
     (Hfl.And(f1, f2), h0 @ h1 @ h2)
   | T.MatchList (t, pats) ->
-    let (f, h) = toRules env t in
+    let (f, h) = toRules fixs t in
     let sub (pat, ti) = 
-      let (fi, hi) = toRules env ti in match pat with
+      let (fi, hi) = toRules fixs ti in match pat with
     | T.NilPat -> (Hfl.Or (Hfl.Pred(Neql, [], [Hfl.Opl(Nil, [], []); f]), fi), hi)
     | T.ConsPat (n, v) ->
       let condNil = Hfl.Pred(Eql, [], [Hfl.Opl(Nil, [], []); f]) in
       let condHead = Hfl.Pred(Neq, [Hfl.Size(Head, f); Hfl.Int n], []) in
-      let env = SS.add v.name env in
-      let (fi, hi) = toRules env ti in
+      let (fi, hi) = toRules fixs ti in
       (Hfl.or_fold [condNil; condHead; Hfl.sbst v.name (Hfl.Opl(Arith.Tail, [],[f])) fi], hi)
     in
     let (fml, hes) = List.split @@ List.map sub pats in
     (Hfl.and_fold fml, h @ List.concat hes)
   | T.FixExpr (v, t) -> 
-    let lvar = Id.gen T.TyList in
-    let cvar = Id.gen @@ T.TyFun(T.TyInt, T.TyUnit) in
-    let ss = SS.of_list [v.name; lvar.name; cvar.name] in
-    let t = T.beta @@ T.App(T.App(t, T.Var lvar), T.Var cvar) in
-    let newenv = SS.union ss env in
-    let (f, h) = toRules newenv t in
-    let fvars = SS.diff (Hfl.free_vars f) (SS.of_list [v.name]) in
-    let newv = Hfl.app_fold_vars v.name (SS.elements fvars) in
+    let (t, vars) = T.to_base t (T.ty_of_expr t) in
+    let t = T.beta t in
+    let names = List.map (fun v -> v.name) vars in
+    let (f, h) = toRules fixs t in
+    let fvars = SS.elements @@ SS.diff (SS.diff (Hfl.free_vars f) fixs) (SS.of_list names) in
+    let newv = Hfl.app_fold_vars v.name fvars in
     let f = Hfl.sbst v.name newv f in
-    let hes: Hfl.hes_rule = { var = v.name; args = [lvar.name; cvar.name]; fix = Hfl.Mu; body = f} in
+    let hes: Hfl.hes_rule = { var = v.name; args = names @ fvars; fix = Hfl.Mu; body = f} in
     (Hfl.Var(v.name), hes :: h)
 
 let toHES lvar t =
-  let (top, rules) = toRules SS.empty t in
+  let (top, rules) = toRules (SS.of_list @@ T.fix_vars t) t in
   let top = Hfl.Forall(lvar.name, top) in
   let start: Hfl.hes_rule = { var = "Sentry"; args = []; fix = Hfl.Nu; body = top} in
   start :: rules

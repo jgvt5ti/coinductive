@@ -105,7 +105,7 @@ let rec print_hfl f = match f with
 
 let print_rule rule =
   let args = List.fold_left (fun s1 -> fun s2 -> s1 ^ " " ^ s2) "" rule.args in
-  rule.var ^ args ^ "=" ^ print_fix rule.fix ^ " " ^ print_hfl rule.body
+  rule.var ^ args ^ " =" ^ print_fix rule.fix ^ " " ^ print_hfl rule.body
 
 let print_hes hes =
   "%HES\n" ^
