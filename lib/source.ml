@@ -23,7 +23,7 @@ type expr
   [@@deriving eq,ord,show]
 
 let mk_id v =
-  let ty_id = Id.gen ~name:"Ty" None in
+  let ty_id = Id.gen None in
   Id.gen ~name:v (TyVar ty_id)
 
 let mk_var v = Var(mk_id v)
@@ -44,28 +44,30 @@ let mk_apps t ls =
   in
   sub t ls
 
-let rec fixvars env t = match t with
+let rec fixvars env fixpoints t = match t with
   | Var v -> begin match MS.find_opt v.name env with
     | None -> Var v
-    | Some (id) when id < 0 -> Var {v with name = (String.uppercase_ascii v.name); id = id }
+    | Some (id) when SS.mem v.name fixpoints ->
+      Var {v with name = (String.uppercase_ascii v.name); id = id }
     | Some (id) -> Var {v with id = id }
   end
   | Num n -> Num n
-  | Op(op, s1, s2) -> Op(op, fixvars env s1, fixvars env s2)
+  | Op(op, s1, s2) -> Op(op, fixvars env fixpoints s1, fixvars env fixpoints s2)
   | Abs(v, s) ->
     let env = MS.add v.name v.id env in
-    Abs(v, fixvars env s)
-  | App(s1, s2) -> App(fixvars env s1, fixvars env s2)
-  | Tuple (ls) -> Tuple (List.map (fixvars env) ls)
-  | Proj (i, s) -> Proj(i, fixvars env s)
-  | InExpr (i, s) -> InExpr(i, fixvars env s)
+    Abs(v, fixvars env fixpoints s)
+  | App(s1, s2) -> App(fixvars env fixpoints s1, fixvars env fixpoints s2)
+  | Tuple (ls) -> Tuple (List.map (fixvars env fixpoints) ls)
+  | Proj (i, s) -> Proj(i, fixvars env fixpoints s)
+  | InExpr (i, s) -> InExpr(i, fixvars env fixpoints s)
   | MatchExpr(v, s, s1, s2) ->
-    let s = fixvars env s in
+    let s = fixvars env fixpoints s in
     let env = MS.add v.name v.id env in
-    let s1 = fixvars env s1 in
-    let s2 = fixvars env s2 in
+    let s1 = fixvars env fixpoints s1 in
+    let s2 = fixvars env fixpoints s2 in
     MatchExpr(v, s, s1, s2)
   | FixExpr (v, s) ->
-    let nv = {v with name = (String.uppercase_ascii v.name)} in
-    let env = MS.add v.name (-v.id) env in
-    FixExpr(nv, fixvars env s)
+    let nv = {v with name = (String.uppercase_ascii v.name); is_fix = true} in
+    let env = MS.add v.name v.id env in
+    let fixpoints = SS.add v.name fixpoints in
+    FixExpr(nv, fixvars env fixpoints s)

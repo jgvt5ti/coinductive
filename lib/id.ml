@@ -2,6 +2,7 @@ type 'ty t =
   { name : string
   ; id   : int
   ; ty   : 'ty
+  ; is_fix : bool
   }
   [@@deriving eq,ord,show]
 
@@ -22,6 +23,7 @@ let gen : ?name:string -> 'annot -> 'anno t =
      { name = name
      ; id = n
      ; ty = ann
+     ; is_fix = false
      }
 
 let string_of_id id = id.name ^ "_" ^ (string_of_int id.id)

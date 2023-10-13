@@ -14,8 +14,12 @@ let transId id =
 
 let rec range m n = if m > n then [] else m :: range (m+1) n
 
-let rec trans source = match source with
-  | S.Var v -> T.Var {v with ty=TyVar(Id.gen ())} (* TODO: sourceの型検査ができたらtransIdをつかう*)
+(* TODO: sourceの型検査ができたらtransIdをつかう*)
+let rec trans env source = match source with
+  | S.Var v -> begin match M.find_opt v.id env with
+    | Some(ty) -> T.Var ({v with ty=ty})
+    | None -> T.Var {v with ty=TyVar(Id.gen ())} 
+  end
   | S.Num n ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
@@ -23,13 +27,19 @@ let rec trans source = match source with
     T.Abs(argvar, T.MatchList (arg, [patNil]))
   | S.Op (op, s1, s2) ->
     let argvar = gen T.TyList in
+    let env = M.add argvar.id T.TyList env in
     let arg = T.Var argvar in
-    let patNil = (T.NilPat, T.Op(op, App(trans s1, arg), App(trans s2, arg))) in
+    let patNil = (T.NilPat, T.Op(op, App(trans env s1, arg), App(trans env s2, arg))) in
     T.Abs(argvar, T.MatchList (arg, [patNil]))
-  | S.Abs (v, s) -> T.Abs ({v with ty=TyVar(Id.gen ())}, trans s)
-  | S.App (s1, s2) -> T.App(trans s1, trans s2)
+  | S.Abs (v, s) -> 
+    let ty = T.TyVar(Id.gen ()) in
+    let v = {v with ty=ty} in
+    let env = M.add v.id ty env in
+    T.Abs (v, trans env s)
+  | S.App (s1, s2) -> T.App(trans env s1, trans env s2)
   | S.Tuple (ls) ->
     let argvar = gen T.TyList in
+    let env = M.add argvar.id T.TyList env in
     let arg = T.Var argvar in
     let patNil = (T.NilPat, T.Num 0) in
     let size = List.length ls in
@@ -37,31 +47,42 @@ let rec trans source = match source with
     let args = List.combine ls nums in
     let f = fun (s, n) ->
       let var = gen T.TyList in
-      (T.ConsPat(n, var), T.App (trans s, Var var))
+      let env = M.add var.id T.TyList env in
+      (T.ConsPat(n, var), T.App (trans env s, Var var))
       in
     T.Abs(argvar, T.MatchList (arg, patNil :: (List.map f args)))
   | S.Proj (i, s) ->
     let argvar = gen T.TyList in
+    let env = M.add argvar.id T.TyList env in
     let path = T.Cons (Num i, T.Var argvar) in
-    let body = T.App (trans s, path) in
+    let body = T.App (trans env s, path) in
     T.Abs(argvar, body)
   | S.InExpr (i, s) ->
     let argvar = gen T.TyList in
     let arg = T.Var argvar in
     let patNil = (T.NilPat, T.Num i) in
-    let pat0 = (T.ConsPat(0, gen T.TyList), T.App (trans s, arg)) in
+    let tailvar = gen T.TyList in
+    let env = M.add tailvar.id T.TyList env in
+    let pat0 = (T.ConsPat(0, tailvar), T.App (trans env s, arg)) in
     T.Abs(argvar, T.MatchList (arg, [patNil; pat0]))
   | S.FixExpr (v, t) ->
-    T.FixExpr ({v with ty=TyVar(Id.gen ())}, trans t)
+    let ty = T.TyVar(Id.gen ()) in
+    let v = {v with ty=ty} in
+    let env = M.add v.id ty env in
+    T.FixExpr (v, trans env t)
   | S.MatchExpr (v, s, s0, s1) ->
     let argvar = gen T.TyList in
+    let env = M.add argvar.id T.TyList env in
     let arg = T.Var argvar in
     let path = T.Cons (Num 0, arg) in
-    let func = trans s in
+    let func = trans env s in
     let lambda = T.Abs (argvar, T.App (func, path)) in
-    let var = {v with ty=T.TyVar(Id.gen ())} in    
-    let t0 = T.sbst var lambda (trans s0) in
-    let t1 = T.sbst var lambda (trans s1) in
+    let ty = T.TyVar(Id.gen ()) in
+    let v = {v with ty=ty} in
+    let env = M.add v.id ty env in
+    let var = {v with ty=ty} in    
+    let t0 = T.sbst var lambda (trans env s0) in
+    let t1 = T.sbst var lambda (trans env s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)
 
 let rec toRules fixs t = match t with

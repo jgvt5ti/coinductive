@@ -41,11 +41,11 @@ let print_pat pat = match pat with
   | ConsPat (n, x) -> string_of_int n ^ "::" ^ x.name ^ " -> "
 
 let rec print_tgt t = match t with
-  | Var v -> v.name
+  | Var v -> v.name (* ^ ": " ^ (print_ty v.ty) *)
   | Unit -> "*"
   | Num n -> string_of_int n
   | Op(op, t1, t2) ->
-    "(" ^ print_tgt t1 ^ print_op op ^ print_tgt t2 ^ ")"
+    "(" ^ print_tgt t1 ^ " " ^ print_op op ^ " " ^ print_tgt t2 ^ ")"
   | Nil -> "[]"
   | Cons(t1, t2) ->
     "(" ^ print_tgt t1 ^ "::" ^ print_tgt t2 ^ ")"
@@ -99,7 +99,8 @@ let rec gen_constraint t = match t with
   | App(t1, t2) ->
     let (ty1, c1) = gen_constraint t1 in
     let (ty2, c2) = gen_constraint t2 in
-    let ty = TyVar (Id.gen ()) in
+    let id = Id.gen () in
+    let ty = TyVar id in
     (ty, [(ty1, TyFun(ty2, ty))] @ c1 @ c2)
   | If0Expr(t0, t1, t2) ->
     let (ty0, c0) = gen_constraint t0 in
@@ -113,41 +114,19 @@ let rec gen_constraint t = match t with
       | ConsPat (_, v) -> [(v.ty, TyList)]
     in
     let (tys, cs) = List.split @@ List.map (fun (_, ti) -> (gen_constraint ti)) ls in
+    let cs = List.flatten cs in
     let tybody = List.hd tys in
     let cbody = List.map (fun tyi -> (tybody, tyi)) (List.tl tys) in
     let cpats = List.concat @@ List.map (fun (pat, _) -> pat_c pat) ls in
-    let cs = List.flatten cs in
     (tybody, [(ty0, TyList)] @ c0 @ cbody @ cpats @ cs)
   | FixExpr(v, t0) ->
     let (ty0, c0) = gen_constraint t0 in
     (ty0, [(ty0, v.ty)] @ c0)
 
 let rec sbst_ty v ty ty' = match ty' with
-  | TyVar v' when v = v' -> ty
+  | TyVar v' when v.id = v'.id -> ty
   | TyVar _ | TyUnit | TyInt | TyList -> ty'
   | TyFun (ty1, ty2) -> TyFun(sbst_ty v ty ty1, sbst_ty v ty ty2)
-
-let rec unify ls = 
-  let sbst f ls = List.map (fun (ty1, ty2) -> (f ty1, f ty2)) ls in
-  let compose v ty ls = List.map (fun(v', ty1) -> (v', sbst_ty v ty ty1)) ls in
-  match ls with
-  | [] -> []
-  | (ty1, ty2) :: ls' when ty1 = ty2 -> unify ls'
-  | (TyVar v, ty2) :: ls' ->
-    let ls' = sbst (sbst_ty v ty2) ls' in
-    let sb = unify ls' in
-    (v, ty2) :: (compose v ty2 sb)
-  | (ty1, TyVar v) :: ls' ->
-    let ls' = sbst (sbst_ty v ty1) ls' in
-    let sb = unify ls' in
-    (v, ty1) :: (compose v ty1 sb)
-  | (TyFun (ty11, ty12), TyFun(ty21, ty22)) :: ls' ->
-    unify @@ ((ty11, ty21) :: (ty12, ty22) :: ls')
-  | (ty1, ty2) :: _ ->
-    print_endline "unification failed";
-    print_endline (print_ty ty1);
-    print_endline (print_ty ty2);
-    assert false
 
 let rec apply_sbst_ty sbst ty = match ty with
   | TyVar v -> (match List.find_opt (fun (v', _) -> v = v') sbst with
@@ -177,6 +156,27 @@ let rec apply_sbst sbst t = match t with
   | FixExpr(v, t1) ->
     let v = {v with ty = apply_sbst_ty sbst v.ty} in
     FixExpr(v, apply_sbst sbst t1)
+
+let rec unify ls =
+  let sbst f ls = List.map (fun (ty1, ty2) -> (f ty1, f ty2)) ls in
+  match ls with
+  | [] -> []
+  | (ty1, ty2) :: ls' when ty1 = ty2 -> unify ls'
+  | (TyVar v, ty2) :: ls' ->
+    let ls' = sbst (sbst_ty v ty2) ls' in
+    let sb = unify ls' in
+    (v, apply_sbst_ty sb ty2) :: sb
+  | (ty1, TyVar v) :: ls' ->
+    let ls' = sbst (sbst_ty v ty1) ls' in
+    let sb = unify ls' in
+    (v, apply_sbst_ty sb ty1) :: sb
+  | (TyFun (ty11, ty12), TyFun(ty21, ty22)) :: ls' ->
+    unify @@ ((ty11, ty21) :: (ty12, ty22) :: ls')
+  | (ty1, ty2) :: _ ->
+    print_endline "unification failed";
+    print_endline (print_ty ty1);
+    print_endline (print_ty ty2);
+    assert false
 
 let to_typed top_ty t =
   let (ty, cs) = gen_constraint t in
@@ -261,6 +261,8 @@ let rec beta t = match t with
     FixExpr(v, beta t0)
   | Abs(v, t0) -> Abs(v, beta t0)
   | App(t1, t2) -> App(beta t1, beta t2)
+  | Op(op, t1, t2) -> Op(op, beta t1, beta t2)
+  | Cons(t1, t2) -> Cons(beta t1, beta t2)
   | _ -> t
 
 let eta_ t = 
@@ -301,7 +303,7 @@ let cont_ty ty = match cps_trans_ty ty with
 
 let rec cps_trans env t = match t with
   | Var v ->
-    if SS.mem v.name env then
+    if S.mem v.id env then
       t
     else
       let kty = cont_ty v.ty in
@@ -327,7 +329,7 @@ let rec cps_trans env t = match t with
   | Nil | Cons _ -> t
   | Abs (v, t) ->
     let v = {v with ty= cps_trans_ty v.ty} in
-    let env = if v.ty = TyList then SS.add v.name env else env in
+    let env = if v.ty = TyList then S.add v.id env else env in
     Abs(v, cps_trans env t)
   | App (t1, t2) ->
     App(cps_trans env t1, cps_trans env t2)
@@ -344,7 +346,7 @@ let rec cps_trans env t = match t with
     let f (pat, ti) = match pat with
       | NilPat -> (pat, App(cps_trans env ti, k))
     | ConsPat (_, v) ->
-        let env = SS.add v.name env in
+        let env = S.add v.id env in
         (pat, App(cps_trans env ti, k))
     in
     Abs(kvar, MatchList(t0, List.map f ls))
@@ -355,7 +357,7 @@ let rec cps_trans env t = match t with
 
 (* t: list -> int*)
 let cps_trans_top lvar t =
-  let top = cps_trans (SS.singleton lvar.name) t in
+  let top = cps_trans (S.singleton lvar.id) t in
   (*top: list -> (int -> * ) -> * *)
   let kvar = gen TyInt in
   let cont = Abs(kvar, Unit) in
