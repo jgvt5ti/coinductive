@@ -178,8 +178,9 @@ let rec apply_sbst sbst t = match t with
     let v = {v with ty = apply_sbst_ty sbst v.ty} in
     FixExpr(v, apply_sbst sbst t1)
 
-let to_typed t =
-  let (_, cs) = gen_constraint t in
+let to_typed top_ty t =
+  let (ty, cs) = gen_constraint t in
+  let cs = (ty, top_ty) :: cs in
   (* List.iter (fun (ty1, ty2) -> print_endline @@ (print_ty ty1) ^ " = " ^ (print_ty ty2)) cs; *)
   let sbst = unify cs in
   (* List.iter (fun (v, ty) -> print_endline @@ v.name ^ ": " ^ (print_ty ty)) sbst; *)
@@ -287,14 +288,16 @@ let rec eta t = match t with
     MatchList(eta t1, ls)
   | FixExpr(v, t1) -> FixExpr(v, eta t1)
 
-let cont_ty ty = TyFun(ty, TyUnit)
-
 let rec cps_trans_ty ty = match ty with
   | TyUnit | TyList -> ty (* Lists always appear in argument types *)
   | TyInt -> TyFun(TyFun(TyInt, TyUnit), TyUnit)
   | TyFun(ty1, ty2) -> 
     TyFun(cps_trans_ty ty1, cps_trans_ty ty2)
   | TyVar v -> TyVar v
+
+let cont_ty ty = match cps_trans_ty ty with
+  | TyFun(ty1, _) -> ty1
+  | _ ->  TyVar (Id.gen ())
 
 let rec cps_trans env t = match t with
   | Var v ->
