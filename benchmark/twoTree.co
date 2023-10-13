@@ -1,0 +1,1 @@
+(fix x. \s. \t. [(x (prj 0(s)) (prj 0(t))); (\u.\v. u + v)(prj 1(s))(prj 1(t)); (x (prj 2(s)) (prj 2(t)))])(fix y. [y; 1; y])(fix z. [z; 1; z])
