@@ -85,6 +85,10 @@ let rec trans env source = match source with
     let t1 = T.sbst var lambda (trans env s1) in
     If0Expr(T.App (func, T.Nil), t0, t1)
 
+let trans_top s =
+  let top_ty = Target.TyFun(Target.TyList, Target.TyInt) in
+  (T.to_typed top_ty) @@ T.beta @@ trans M.empty s
+
 let rec toRules fixs t = match t with
   | T.Var v -> (Hfl.Var v.name, [])
   | T.Unit -> (Hfl.Bool true, [])
