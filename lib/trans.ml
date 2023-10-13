@@ -106,7 +106,7 @@ let rec toRules fixs t = match t with
     (Hfl.and_fold fml, h @ List.concat hes)
   | T.FixExpr (v, t) -> 
     let (t, vars) = T.to_base t (T.ty_of_expr t) in
-    let t = T.beta t in
+    let t = T.beta @@ T.eta t in
     let names = List.map (fun v -> v.name) vars in
     let (f, h) = toRules fixs t in
     let fvars = SS.elements @@ SS.diff (SS.diff (Hfl.free_vars f) fixs) (SS.of_list names) in

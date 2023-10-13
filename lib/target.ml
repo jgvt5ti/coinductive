@@ -262,6 +262,31 @@ let rec beta t = match t with
   | App(t1, t2) -> App(beta t1, beta t2)
   | _ -> t
 
+let eta_ t = 
+  let ty = ty_of_expr t in
+  let rec make_vars ty = match ty with
+    | TyFun (ty1, ty2) -> Id.gen ty1 :: make_vars ty2
+    | _ -> []
+  in
+  let rec abs_app t vars = match vars with
+    | [] -> t
+    | v :: ls -> Abs(v, abs_app (App (t, Var v)) ls)
+  in
+  abs_app t (make_vars ty)
+
+let rec eta t = match t with
+  | Var _ -> eta_ t
+  | Unit |  Num _ | Nil -> t
+  | Cons(t1, t2) -> Cons(eta t1, eta t2)
+  | Op(op, t1, t2) -> Op(op, eta t1, eta t2)
+  | App(t1, t2) -> App(eta t1, eta t2)
+  | Abs(v, t1) -> Abs(v, eta t1)
+  | If0Expr(t0, t1, t2) -> If0Expr(eta t0, eta t1, eta t2)
+  | MatchList(t1, ls) ->
+    let ls = List.map(fun (pat, ti) -> (pat, eta ti)) ls in
+    MatchList(eta t1, ls)
+  | FixExpr(v, t1) -> FixExpr(v, eta t1)
+
 let cont_ty ty = TyFun(ty, TyUnit)
 
 let rec cps_trans_ty ty = match ty with
