@@ -1,9 +1,10 @@
 # Syntax
-The program input lambda calculus with fix points defined below:
+The program inputs lambda calculus with fix points defined below:
 ```
   M ::= IDENT | n | M_0 M_1 | \ IDENT. M | fix IDENT .M | [M (; M)*] | prj i (M) | inj i (M) | case M (IDENT. M ; IDENT. M)
 ```
 IDENT ranges over string which start from a lowercase letter.
+The program outputs a HFL formula that represent the productivity of the input program.
 # How to run it
 You can use docker image [Here].
 To transform the target program to hfl formula, pass the program, then it will print the correspondig HFL forumla.
